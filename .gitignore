@@ -1,0 +1,30 @@
+# avoid backup files
+*.lms
+*.log
+*.bak
+*.asv
+*~
+\#*\#
+
+# avoid data files
+*.mat
+*.csv
+
+# avoid videos and images
+*.mpg
+*.avi
+*.mp4
+*.png
+*.fig
+*.jpg
+*.JPEG
+
+#avoid personal notes
+*.txt
+
+#avoid dophin data
+.dolphin
+.directory
+
+#ipython folder
+__pycache__
