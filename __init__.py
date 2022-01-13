@@ -193,7 +193,7 @@ def dipole_source(f, df=0, source_pos=mp.Vector3(0,0,0),
 
 def plane_wave_source(f, df, k, center, size, inc_plane_norm, amplitude=1):
     """
-    Plane wave source. 
+    Plane wave source.
     """
     uk = k.unit()
     inc_plane_norm = inc_plane_norm.unit()
@@ -242,7 +242,7 @@ def dielectric_multilayer(design_file, substrate_thickness, x_width,
     """
     Dielectric multilayer stack
     """
-    
+
     data = loadmat(design_file)
 
     N = np.size(data['idx_layers'])
@@ -495,7 +495,7 @@ def pol_splitting_grating(  medium_groove=mp.Medium(epsilon=2),
     Circular polarization sensitive grating. Similar tu the metasurface-like
     grating, but with specific purpose.
     """
-    
+
     metasurface = []
 
     if n_rings != 0:
@@ -521,7 +521,7 @@ def pol_splitting_grating(  medium_groove=mp.Medium(epsilon=2),
                 raise ValueError()
 
             if n_arms != 0:
-                theta = np.linspace(0, 2*pi/n_arms, n_scatter/n_arms)
+                theta = np.linspace(0, 2*pi/n_arms, int(n_scatter/n_arms))
                 theta = np.tile(theta, n_arms)
 
             else:
@@ -556,7 +556,7 @@ def pol_splitting_grating(  medium_groove=mp.Medium(epsilon=2),
 
 
 def spiral_grating(medium_groove=mp.Medium(epsilon=2),
-                   D=0.4, d=None, DBR_period=0.2, FF=0.5, N_rings=10, 
+                   D=0.4, d=None, DBR_period=0.2, FF=0.5, N_rings=10,
                    N_arms=2, thickness=0, orientation=mp.Vector3(0, 0, 1)):
     """
     Elliptic DBR cavity created as a sequence of concentric cylinders.
@@ -617,7 +617,7 @@ def grating_veritices(period, start_radius1,
     Function for generating the list of vertices por hte circular, spiral
     and elliptic gratings.
     """
-    
+
     res = 50                    # even value required
     half_res = 25
 
