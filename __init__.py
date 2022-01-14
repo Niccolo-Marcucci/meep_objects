@@ -309,7 +309,7 @@ def my_sum(array, i, j):
 def elliptic_DBR_cavity(medium_groove=mp.Medium(epsilon=2),
                         D=0.4, d=0.3, DBR_period=0.2, FF=0.5, N_rings=10,
                         thickness=0,
-                        orientation=mp.Vector3(0,0,1), axial_rotation=0):
+                        center=mp.Vector3(), axial_rotation=0):
     """
     Elliptic DBR cavity created as a sequence of concentric cylinders.
 
@@ -339,12 +339,15 @@ def elliptic_DBR_cavity(medium_groove=mp.Medium(epsilon=2),
     rings = []
     polygons = grating_veritices(DBR_period, D/2, d/2, N_rings, n_arms = 0,  FF = FF)
     for ring in polygons:
-        # c1 = mp.Prism([mp.Vector3(v[0],v[1],0),for v in np.transpose(ring)
-        c1 = mp.Prism([mp.Vector3(v[0]*cos(axial_rotation)-v[1]*sin(axial_rotation),
-                                  v[0]*sin(axial_rotation)+v[1]*cos(axial_rotation),0)
-                                      for v in np.transpose(ring)],
+        vertices = [mp.Vector3(v[0]*cos(axial_rotation)-v[1]*sin(axial_rotation),
+                               v[0]*sin(axial_rotation)+v[1]*cos(axial_rotation),
+                               0)   for v in np.transpose(ring)]
+        centroid =  sum(vertices, mp.Vector3(0)) * (1.0 / len(vertices))
+
+        c1 = mp.Prism(vertices = vertices,
                       height = thickness,
-                      axis = orientation,
+                      axis = mp.Vector3(z=1),
+                      center = center + centroid,
                       material = medium_groove)
         rings.append(c1)
     return rings
@@ -545,11 +548,14 @@ def pol_splitting_grating(  medium_groove=mp.Medium(epsilon=2),
 
                 if scatter_shape == 'V' or scatter_shape == 'v' :
                     tilt = tilt - pi
-                    scatter =  mp.Prism(vertices = [mp.Vector3(v[0],v[1],0).rotate(mp.Z,tilt)*sc_length for v in scatter_vertices],
+                    vertices = [mp.Vector3(v[0],v[1],0).rotate(mp.Z,tilt)*sc_length for v in scatter_vertices]
+                    centroid =  sum(vertices, mp.Vector3(0)) * (1.0 / len(vertices))
+
+                    scatter =  mp.Prism(vertices = vertices,
                                         height = thickness,
                                         center=mp.Vector3(radius * cos(location_tilt),
                                                           radius * sin(location_tilt),
-                                                          0) + center,
+                                                          0) + center + centroid,
                                         axis = mp.Vector3(z=1),
                                         material = medium_groove)
                 else:
@@ -570,7 +576,7 @@ def pol_splitting_grating(  medium_groove=mp.Medium(epsilon=2),
 
 def spiral_grating(medium_groove=mp.Medium(epsilon=2),
                    D=0.4, d=None, DBR_period=0.2, FF=0.5, N_rings=10,
-                   N_arms=2, thickness=0, orientation=mp.Vector3(0, 0, 0)):
+                   N_arms=2, thickness=0, center=mp.Vector3(0, 0, 0)):
     """
     Elliptic DBR cavity created as a sequence of concentric cylinders.
 
@@ -613,12 +619,15 @@ def spiral_grating(medium_groove=mp.Medium(epsilon=2),
 
     polygons = grating_veritices(DBR_period, D/2, d/2, N_rings, n_arms = N_arms,  FF = FF)
 
+
     for polygon in polygons:
         vertices = [mp.Vector3(v[0],v[1],0) for v in np.transpose(polygon)]
-        sum(vertices, mp.Vector3(0)) * (1.0 / len(vertices))
-        c1 = mp.Prism(vertices = [mp.Vector3(v[0],v[1],0) for v in np.transpose(polygon)],
+        centroid =  sum(vertices, mp.Vector3(0)) * (1.0 / len(vertices))
+
+        c1 = mp.Prism(vertices = vertices,
                       height = thickness,
                       axis = mp.Vector3(z=1),
+                      center = center + centroid,
                       material = medium_groove)
         device.append(c1)
 
