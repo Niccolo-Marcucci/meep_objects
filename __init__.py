@@ -457,16 +457,16 @@ def metasurface_radial_grating(medium_groove=mp.Medium(epsilon=2),
                 radius = D/2 + n * metasurface_period
 
                 if scatter_type == "filled":
-                    n_scatter = round(2*pi * radius / scatter_length)
+                    N_scatters = round(2*pi * radius / scatter_length)
                 elif scatter_type == "radial":
-                    n_scatter = round(2*pi * start_radius / scatter_length)
+                    N_scatters = round(2*pi * start_radius / scatter_length)
                 elif scatter_type == "radial_filled":
-                    n_scatter = round(2*pi * start_radius / scatter_length)
+                    N_scatters = round(2*pi * start_radius / scatter_length)
                 else:
                     raise ValueError()
 
-                for k in range(n_scatter):
-                    location_tilt = 2*pi / n_scatter * k
+                for k in range(N_scatters):
+                    location_tilt = 2*pi / N_scatters * k
 
                     tilt = (pi/2 + scatter_tilt + location_tilt + n*pi/6)
 
@@ -487,68 +487,81 @@ def metasurface_radial_grating(medium_groove=mp.Medium(epsilon=2),
 
 def pol_splitting_grating(  medium_groove=mp.Medium(epsilon=2),
                             D=2, metasurface_period=0.4, scatter_length = 0.4,
-                            scatter_width=0.5, scatter_tilt=pi/4,
-                            scatter_type = 'radial', topology='circular',
-                            n_rings=10, n_arms=0, lambda_bsw=0.4,
-                            thickness=0, orientation=mp.Vector3(0, 0, 1)):
+                            scatter_width=0.1, scatter_tilt=pi/3,
+                            scatter_shape = '', topology='circular',
+                            n_rings=9, n_arms=0, lambda_bsw=0.5,
+                            thickness=1, center=mp.Vector3(0, 0, 0)):
     """
     Circular polarization sensitive grating. Similar tu the metasurface-like
     grating, but with specific purpose.
     """
+    sc_width = scatter_width
+    sc_length = scatter_length
+
+    # following lists are for v-shaped scatters
+    rel_width = sc_width / sc_length
+    scatter_vertices_x = [0, .5, .5-rel_width/0.866, 0, -.5+rel_width*0.866, -.5]
+    scatter_vertices_y = [-.5, .5, .5, -.5+rel_width/0.5, .5, .5]
+    scatter_vertices = np.array([scatter_vertices_x, scatter_vertices_y]).transpose()
 
     metasurface = []
 
     if n_rings != 0:
         for n in range(n_rings):
+            alpha = scatter_tilt
 
-            r0 = D/2 + scatter_width/2
-            r = r0 + n * metasurface_period
+            r0 = D/2 + n * metasurface_period
 
-            if scatter_type == "filled":
-                L = 2*pi*r + pi*metasurface_period*n_arms
-                n_scatter = round(L / metasurface_period)
+            L = 2*pi*r0 + pi*metasurface_period*n_arms # length of spiral arm
 
-                if n_arms!=0 :
-                    n_scatter = n_scatter - np.mod(n_scatter,n_arms)
-
-            elif scatter_type == "radial":
-                L = 2*pi*r0 + pi*metasurface_period*n_arms
-                n_scatter = round(L / metasurface_period)
-
-                if n_arms!=0 :
-                    n_scatter = n_scatter - np.mod(n_scatter,n_arms)
+            # the following if statement is just for setting the actual
+            # beginning of the scatter at D/2
+            if scatter_shape == 'V' or scatter_shape == 'v':
+                r0 = r0 + metasurface_period/2
             else:
-                raise ValueError()
+                r0 = r0 + sc_width/2
+
+            N_scatters = round(L / metasurface_period)
+
 
             if n_arms != 0:
-                theta = np.linspace(0, 2*pi/n_arms, int(n_scatter/n_arms))
+                N_scatters -= np.mod(N_scatters,n_arms) # make N_scatters divisible by n_arms
+                theta = np.linspace(0, 2*pi/n_arms, int(N_scatters/n_arms))
                 theta = np.tile(theta, n_arms)
-
             else:
-                theta = np.zeros((n_scatter,1))
+                theta = np.zeros((N_scatters,1))
 
-            for k in range(n_scatter):
-                location_tilt = 2*pi / n_scatter * k
+            for k in range(N_scatters):
+                location_tilt = 2*pi / N_scatters * k
 
                 if topology == 'spiral':
-                    radius = r + lambda_bsw*n_arms*theta(k)/2/pi
-                    tilt = (pi/2 + location_tilt + n*scatter_tilt)
+                    radius = r0 + (lambda_bsw * n_arms * theta[k]/2/pi)
+                    tilt = pi/2 + location_tilt + n*scatter_tilt
                 elif topology == 'circular':
-                    radius = r ;
-                    tilt = (pi/2 + location_tilt + n*scatter_tilt + theta[k])
+                    radius = r0
+                    tilt = pi/2 + location_tilt + n*scatter_tilt + theta[k]
                 else:
-                    raise ValueError()
+                    raise ValueError('Topology can be either "spiral" or "circular"')
 
-                metasurface.append(mp.Block(
-                        e1=mp.Vector3(cos(tilt), sin(tilt), 0),
-                        e2=mp.Vector3(cos(tilt+pi/2), sin(tilt+pi/2), 0),
-                        size=mp.Vector3(scatter_length*0.75, scatter_width, thickness),
-                        center=mp.Vector3(
-                            radius * cos(location_tilt),
-                            radius * sin(location_tilt),
-                            0),
-                        material=medium_groove))
+                if scatter_shape == 'V' or scatter_shape == 'v' :
+                    tilt = tilt - pi
+                    scatter =  mp.Prism(vertices = [mp.Vector3(v[0],v[1],0).rotate(mp.Z,tilt)*sc_length for v in scatter_vertices],
+                                        height = thickness,
+                                        center=mp.Vector3(radius * cos(location_tilt),
+                                                          radius * sin(location_tilt),
+                                                          0) + center,
+                                        axis = mp.Vector3(z=1),
+                                        material = medium_groove)
+                else:
+                    scatter = mp.Block(e1=mp.Vector3(cos(tilt), sin(tilt), 0),
+                                       e2=mp.Vector3(cos(tilt+pi/2), sin(tilt+pi/2), 0),
+                                       size=mp.Vector3(scatter_length*0.75, scatter_width, thickness),
+                                       center=mp.Vector3(radius * cos(location_tilt),
+                                                         radius * sin(location_tilt),
+                                                         0) + center,
+                                       material=medium_groove)
 
+                metasurface.append(scatter)
                 metasurface[-1].name  = f'Scatter_{n}_{k}'
                 metasurface[-1].group = 'Metasurface'
 
@@ -557,7 +570,7 @@ def pol_splitting_grating(  medium_groove=mp.Medium(epsilon=2),
 
 def spiral_grating(medium_groove=mp.Medium(epsilon=2),
                    D=0.4, d=None, DBR_period=0.2, FF=0.5, N_rings=10,
-                   N_arms=2, thickness=0, orientation=mp.Vector3(0, 0, 1)):
+                   N_arms=2, thickness=0, orientation=mp.Vector3(0, 0, 0)):
     """
     Elliptic DBR cavity created as a sequence of concentric cylinders.
 
@@ -605,7 +618,7 @@ def spiral_grating(medium_groove=mp.Medium(epsilon=2),
         sum(vertices, mp.Vector3(0)) * (1.0 / len(vertices))
         c1 = mp.Prism(vertices = [mp.Vector3(v[0],v[1],0) for v in np.transpose(polygon)],
                       height = thickness,
-                      axis = orientation,
+                      axis = mp.Vector3(z=1),
                       material = medium_groove)
         device.append(c1)
 
@@ -640,7 +653,7 @@ def grating_veritices(period, start_radius1,
 
             res = 2 * half_res
 
-            theta= np.linspace(0, 2*pi*N_periods/n_arms, half_res);
+            theta= np.linspace(0, 2*pi*N_periods/n_arms, half_res)
 
             # from where to start the spiral, might even be elliptic
             if a == b == 0 :
@@ -650,7 +663,7 @@ def grating_veritices(period, start_radius1,
                                           (b*np.cos(theta+2*pi*j/n_arms))**2 +
                                           (a*np.sin(theta+2*pi*j/n_arms))**2 )
             # parametrize the radius
-            radius = start_radius+period*theta/(2*pi/n_arms);
+            radius = start_radius+period*theta/(2*pi/n_arms)
 
             vertices = np.zeros((2, res))
             vertices[0, 0:half_res] = radius*np.cos(theta+2*pi*j/n_arms)
@@ -691,11 +704,74 @@ def grating_veritices(period, start_radius1,
             radius = start_radius + period*j
 
             vertices = np.zeros((2,res))
-            vertices[0,0:half_res] = radius * np.cos(theta);
-            vertices[1,0:half_res] = radius * np.sin(theta);
+            vertices[0,0:half_res] = radius * np.cos(theta)
+            vertices[1,0:half_res] = radius * np.sin(theta)
             vertices[0,half_res:res] = np.flip( (radius+period*FF) * np.cos(theta))
             vertices[1,half_res:res] = np.flip( (radius+period*FF) * np.sin(theta))
             vert_list.append(vertices)
 
     return vert_list
 
+def create_openscad(sim, scale_factor=1):
+    try:
+        import openpyscad as ops
+    except ModuleNotFoundError:
+        print("WARNING openpyscad is not installed in this environment")
+    else:
+        try:
+            scad_name = f"{sim.name}.scad"
+        except:
+            print("WARNING Simulation doesn't have a name")
+            scad_name = "meep_sim.scad"
+
+        with open(scad_name,"w") as file:
+            print("written")
+            file.write(f"//Simulation {scad_name}\n")
+
+        for obj in sim.geometry:
+            if obj.__class__ == mp.Block:
+                cube = ops.Cube([obj.size.x*scale_factor,
+                                  obj.size.y*scale_factor,
+                                  obj.size.z*scale_factor], center = True)
+                tilt = np.arctan2(obj.e1.y, obj.e1.x)
+                if tilt != 0:
+                    cube = cube.rotate([0, 0, tilt/np.pi*180])
+
+                index = np.round(np.sqrt(obj.material.epsilon_diag.x),2)
+                if index == 2.53:
+                    color = [0, 0, 1]
+                elif index == 1.65:
+                    color = [0, 1, 0]
+                elif index == 1.46:
+                    color = [1, 0, 0]
+                elif index == 1.48:
+                    color = [1, 1, 0]
+                elif index == 2.08:
+                    color = [0, 1, 1]
+                else:
+                    color = [1, 0, 0]
+                cube = cube.color(color)
+
+                scad = cube
+
+            elif obj.__class__ == mp.Cylinder:
+                cyl = ops.Cylinder(h=obj.height*scale_factor,
+                                    r=obj.radius*scale_factor, center = True)
+
+                scad = cyl
+
+            elif obj.__class__ == mp.Prism:
+                prism = ops.Polyhedron(points)
+
+            scad = scad.translate([obj.center.x*scale_factor,
+                                   obj.center.y*scale_factor,
+                                   obj.center.z*scale_factor])
+            scad.write(scad_name, mode='a')
+
+        # sim_domain = ops.Cube([(sim.cell_size.x - sim.PML_width) * scale_factor,
+        #                         (sim.cell_size.y - sim.PML_width) * scale_factor,
+        #                         (sim.cell_size.z - sim.PML_width) * scale_factor], center = True)
+        # sim_domain = sim_domain.color([.5, .5, .5, .5])
+        # sim_domain = sim_domain.translate([sim.geometry_center.x*scale_factor,
+        #                                     sim.geometry_center.y*scale_factor,
+        #                                     sim.geometry_center.z*scale_factor])
