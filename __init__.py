@@ -491,7 +491,8 @@ def metasurface_radial_grating(medium_groove=mp.Medium(epsilon=2),
 def pol_splitting_grating(  medium_groove=mp.Medium(epsilon=2),
                             D=2, metasurface_period=0.4, scatter_length = 0.4,
                             scatter_width=0.1, scatter_tilt=pi/3,
-                            scatter_shape = '', topology='circular',
+                            scatter_shape = '', scatter_disposition='radial',
+                            topology='circular',
                             n_rings=9, n_arms=0, lambda_bsw=0.5,
                             thickness=1, center=mp.Vector3(0, 0, 0)):
     """
@@ -515,20 +516,24 @@ def pol_splitting_grating(  medium_groove=mp.Medium(epsilon=2),
 
             r0 = D/2 + n * metasurface_period
 
-            L = 2*pi*r0 + pi*metasurface_period*n_arms # length of spiral arm
-
             # the following if statement is just for setting the actual
             # beginning of the scatter at D/2
             if scatter_shape == 'V' or scatter_shape == 'v':
-                r0 = r0 + metasurface_period/2
+                r0 += metasurface_period/2
             else:
-                r0 = r0 + sc_width/2
+                r0 += sc_width/2
 
-            N_scatters = round(L / metasurface_period)
+            if scatter_disposition == 'filled':
+                L = 2*pi*r0 + pi*metasurface_period*n_arms      # length of on turn in archimede's spiral
+                N_scatters = round(L / metasurface_period)
+            if scatter_disposition == 'radial':
+                r1 = r0 - n * metasurface_period
+                L = 2*pi*r1 + pi*metasurface_period*n_arms
+                N_scatters = round(L / metasurface_period)
 
 
             if n_arms != 0:
-                N_scatters -= np.mod(N_scatters,n_arms) # make N_scatters divisible by n_arms
+                N_scatters -= np.mod(N_scatters,n_arms)     # make N_scatters divisible by n_arms
                 theta = np.linspace(0, 2*pi/n_arms, int(N_scatters/n_arms))
                 theta = np.tile(theta, n_arms)
             else:
