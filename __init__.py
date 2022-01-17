@@ -631,7 +631,7 @@ def spiral_grating(medium_groove=mp.Medium(epsilon=2),
 
         c1 = mp.Prism(vertices = vertices,
                       height = thickness,
-                      axis = mp.Vector3(z=1),
+                      axis = mp.Vector3(0,0,1),
                       center = center + centroid,
                       material = medium_groove)
         device.append(c1)
@@ -641,12 +641,9 @@ def spiral_grating(medium_groove=mp.Medium(epsilon=2),
 def grating_veritices(period, start_radius1,
                       start_radius2 = 0, N_periods=10, n_arms =0,  FF=0.5) :
     """
-    Function for generating the list of vertices por hte circular, spiral
+    Function for generating the list of vertices por the circular, spiral
     and elliptic gratings.
     """
-
-    res = 50                    # even value required
-    half_res = 25
 
     if start_radius2 == 0:
         start_radius2 = start_radius1
@@ -655,37 +652,33 @@ def grating_veritices(period, start_radius1,
 
     vert_list = []
 
-    # r_n=np.zeros(int_res)
-    # the=np.zeros(int_res)
-
     if n_arms != 0 :
+        half_res = np.sum( [ (max([a,b]) + period*i) * 2*pi for i in range(N_periods)]) / period
+        half_res = max(int(half_res), 32*int(N_periods/n_arms))
+        half_res -= np.mod(half_res, int(N_periods/n_arms)) + 1
+
+        res = 2 * half_res
+
+        theta= np.linspace(0, 2*pi*N_periods/n_arms, half_res)
+
         # Each arm of the spiral is defined by a polygon
         for j in range(np.abs(n_arms)) :
-            half_res = np.sum( [ (max([a,b]) + period*i) * 2*pi / period
-                                                    for i in range(N_periods)])
-            half_res = int(half_res)
-
-            res = 2 * half_res
-
-            theta= np.linspace(0, 2*pi*N_periods/n_arms, half_res)
 
             # from where to start the spiral, might even be elliptic
             if a == b == 0 :
                 start_radius = np.zeros((half_res,))
             else:
                 start_radius = a * b / np.sqrt(
-                                          (b*np.cos(theta+2*pi*j/n_arms))**2 +
-                                          (a*np.sin(theta+2*pi*j/n_arms))**2 )
+                                          (b * np.cos(theta + 2*pi*j/n_arms) )**2 +
+                                          (a * np.sin(theta + 2*pi*j/n_arms) )**2 )
             # parametrize the radius
             radius = start_radius+period*theta/(2*pi/n_arms)
 
             vertices = np.zeros((2, res))
             vertices[0, 0:half_res] = radius*np.cos(theta+2*pi*j/n_arms)
             vertices[1, 0:half_res] = radius*np.sin(theta+2*pi*j/n_arms)
-            vertices[0, half_res:res] = np.flip(
-                              (radius+period*FF) * np.cos(theta+2*pi*j/n_arms))
-            vertices[1, half_res:res] = np.flip( (radius+period*FF) *
-                                                  np.sin(theta+2*pi*j/n_arms) )
+            vertices[0, half_res:res] = np.flip( (radius+period*FF) * np.cos(theta+2*pi*j/n_arms) )
+            vertices[1, half_res:res] = np.flip( (radius+period*FF) * np.sin(theta+2*pi*j/n_arms) )
 
             vert_list.append(vertices)
 
@@ -703,13 +696,15 @@ def grating_veritices(period, start_radius1,
 
                 vert_list.append(vert)
 
-    elif n_arms == 0 :
+    else :
         for j in range(N_periods):
-            half_res = int( (max([start_radius1,start_radius2]) + period*j) * 2*pi / period)
-            half_res += 4 - np.mod(half_res,4) + 1
+            half_res = int( (max([a,b]) + period*j) * 2*pi / period)
+            half_res = max(int(half_res), 32)
+            half_res -= np.mod(half_res,4) +1
+
             res = 2 * half_res
 
-            theta = np.linspace(0,2*pi,half_res)
+            theta = np.linspace(0, 2*pi, half_res)
 
             # first circle radius, can be elliptic
             start_radius = a * b / np.sqrt( (b*np.cos(theta))**2 +
@@ -722,6 +717,8 @@ def grating_veritices(period, start_radius1,
             vertices[1,0:half_res] = radius * np.sin(theta)
             vertices[0,half_res:res] = np.flip( (radius+period*FF) * np.cos(theta))
             vertices[1,half_res:res] = np.flip( (radius+period*FF) * np.sin(theta))
+            vertices[1,half_res] += .001   # this is necessary for solving a bug
+                                           # see https://github.com/NanoComp/libctl/issues/61
             vert_list.append(vertices)
 
     return vert_list
@@ -775,7 +772,8 @@ def create_openscad(sim, scale_factor=1):
                 scad = cyl
 
             elif obj.__class__ == mp.Prism:
-                prism = ops.Polyhedron(points)
+                print("to be defined")
+                #prism = ops.Polyhedron(points)
 
             scad = scad.translate([obj.center.x*scale_factor,
                                    obj.center.y*scale_factor,
