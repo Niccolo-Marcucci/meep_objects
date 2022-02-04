@@ -512,8 +512,6 @@ def pol_splitting_grating(  medium_groove=mp.Medium(epsilon=2),
 
     if n_rings != 0:
         for n in range(n_rings):
-            alpha = scatter_tilt
-
             r0 = D/2 + n * metasurface_period
 
             # the following if statement is just for setting the actual
@@ -639,7 +637,8 @@ def spiral_grating(medium_groove=mp.Medium(epsilon=2),
     return device
 
 def grating_veritices(period, start_radius1,
-                      start_radius2 = 0, N_periods=10, n_arms =0,  FF=0.5) :
+                      start_radius2=0, N_periods=10, n_arms=0,  FF=0.5,
+                      spacer='empty') :
     """
     Function for generating the list of vertices por the circular, spiral
     and elliptic gratings.
@@ -697,6 +696,25 @@ def grating_veritices(period, start_radius1,
                 vert_list.append(vert)
 
     else :
+        if spacer == 'full':
+            # make a circle at the centre
+            extra_r = period * (1 - FF)
+
+            theta = np.linspace(0, 2*pi*(1-1/32), 32)
+            radius = a * b / np.sqrt( (b*np.cos(theta))**2 +
+                                      (a*np.sin(theta))**2 )
+
+            vertices = np.zeros((2,32))
+            vertices[0,:] = radius * np.cos(theta)
+            vertices[1,:] = radius * np.sin(theta)
+
+            vert_list.append(vertices)
+        elif spacer == 'empty':
+            extra_r = 0
+            print('spacer is empty')
+        else:
+            raise ValueError("Invalid spacer value. Either 'empty' or 'full'")
+
         for j in range(N_periods):
             half_res = int( (max([a,b]) + period*j) * 2*pi / period)
             half_res = max(int(half_res), 32)
@@ -709,9 +727,7 @@ def grating_veritices(period, start_radius1,
             # first circle radius, can be elliptic
             start_radius = a * b / np.sqrt( (b*np.cos(theta))**2 +
                                             (a*np.sin(theta))**2 )
-
-            radius = start_radius + period*j
-
+            radius = start_radius + period*j + extra_r
             vertices = np.zeros((2,res))
             vertices[0,0:half_res] = radius * np.cos(theta)
             vertices[1,0:half_res] = radius * np.sin(theta)
