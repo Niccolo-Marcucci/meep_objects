@@ -92,4 +92,5 @@ def plot_image(x, y, image,  n_grid = 11, **kwargs):
 
     plt.xticks(x_positions, x_label_list)
     plt.yticks(y_positions, y_label_list)
- 
+
+    return fig

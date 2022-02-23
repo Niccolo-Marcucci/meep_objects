@@ -237,8 +237,8 @@ def plane_wave_source(f, df, k, center, size, inc_plane_norm, amplitude=1):
     return plane_wave
 
 def dielectric_multilayer(design_file, substrate_thickness, x_width,
-                          y_width=1, unit = 'um', exclude_last_layer=False,
-                          buried=False, axis = "z") :
+                          y_width=1, unit = 'um', used_layer_info={}, exclude_last_layer=False,
+                          buried=False, axis = mp.Z) :
     """
     Dielectric multilayer stack
     """
@@ -248,6 +248,9 @@ def dielectric_multilayer(design_file, substrate_thickness, x_width,
     N = np.size(data['idx_layers'])
     idx_layers = data['idx_layers'].reshape(N)
     d_layers   = data['d_layers'].reshape(N)
+
+    d_layers[ used_layer_info['used_layer'] ] = used_layer_info['thickness']*1e-6
+    idx_layers[ used_layer_info['used_layer'] ] = used_layer_info['refractive index']
 
     if unit == 'nm' :
         d_layers *= 1e9
@@ -260,9 +263,9 @@ def dielectric_multilayer(design_file, substrate_thickness, x_width,
     d_layers[-1] = 0
 
     if buried:
-        z_shift = d_layers[-2]/2 + d_layers[-3]/2
+        z_shift = d_layers[-2]/2 + d_layers[-3]
     else:
-        z_shift = 0
+        z_shift = d_layers[-2]/2
 
         # d_layers[-2] = 0
 
@@ -275,13 +278,13 @@ def dielectric_multilayer(design_file, substrate_thickness, x_width,
         z = -d_layers[-2]/2 - my_sum(d_layers,i+1,-2) - d/2 + z_shift
 
         if not (i == N-2 and exclude_last_layer) :
-            if axis == "z" :
+            if axis == mp.Z :
                 size = [x_width, y_width, d]
                 centre = [0, 0, z]
-            elif axis == "y":
-                size = [x_width, d, x_width]
+            elif axis == mp.Y:
+                size = [x_width, d, y_width]
                 centre = [0, z, 0]
-            elif axis == "x":
+            elif axis == mp.Y:
                 size = [d, y_width, x_width]
                 centre = [z, 0, 0]
 
@@ -355,8 +358,8 @@ def elliptic_DBR_cavity(medium_groove=mp.Medium(epsilon=2),
 
 def linear_DBR_cavity(medium_groove=mp.Medium(epsilon=2),
                       D=0.4, DBR_period=0.2, FF=0.5, N_periods=10,
-                      width=10, thickness=0,
-                      axial_rotation=0):
+                      width=1, thickness=0, axis=mp.Z,
+                      axial_rotation=0, center=mp.Vector3()):
     """
     Linear DBR cavity created as a sequence of rectangles.
 
@@ -385,19 +388,46 @@ def linear_DBR_cavity(medium_groove=mp.Medium(epsilon=2),
     """
     device = []
     for i in range(1,N_periods+1):
-        groove_size = mp.Vector3(FF*DBR_period,width,thickness)
-        groove_centre = mp.Vector3(D/2+FF*DBR_period/2+(N_periods-i)*DBR_period,0,0)
+        groove_size = mp.Vector3(FF*DBR_period, width, thickness)
+        groove_centre = mp.Vector3(D/2 + FF*DBR_period/2 + (N_periods-i)*DBR_period, 0, 0)
+
 
         phi = axial_rotation
-        b1 = mp.Block(e1=mp.Vector3(cos(phi), sin(phi), 0),
-                      e2=mp.Vector3(cos(phi+pi/2), sin(phi+pi/2), 0),
-                      size=groove_size,
-                      center=groove_centre.rotate(mp.Z, phi),
+        e1 = mp.Vector3(cos(phi), sin(phi), 0)
+        e2 = mp.Vector3(cos(phi+pi/2), sin(phi+pi/2), 0)
+        e3 = mp.Vector3(z=1)
+        groove_centre_right = groove_centre.rotate(mp.Vector3(z=1), phi)
+        groove_centre_left  = groove_centre.rotate(mp.Vector3(z=1), phi + pi)
+
+        if axis == mp.Y :
+            e1 = e1.rotate(mp.Vector3(x=1), -pi/2)
+            e2 = e2.rotate(mp.Vector3(x=1), -pi/2)
+            e3 = e3.rotate(mp.Vector3(x=1), -pi/2)
+            groove_centre_right = groove_centre_right.rotate(mp.Vector3(x=1), -pi/2) + center
+            groove_centre_left = groove_centre_left.rotate(mp.Vector3(x=1), -pi/2) + center
+        elif axis == mp.X :
+            e1 = e1.rotate(mp.Vector3(y=1), -pi/2)
+            e2 = e2.rotate(mp.Vector3(y=1), -pi/2)
+            e3 = e3.rotate(mp.Vector3(y=1), -pi/2)
+            groove_centre_right = groove_centre_right.rotate(mp.Vector3(y=1), -pi/2) + center
+            groove_centre_left = groove_centre_left.rotate(mp.Vector3(y=1), -pi/2) + center
+        elif axis == mp.Z :
+            groove_centre_right += center
+            groove_centre_left += center
+        else:
+            raise ValueError("Wrong axis value.")
+
+        b1 = mp.Block(e1 = e1,
+                      e2 = e2,
+                      e3 = e3,
+                      size = groove_size,
+                      center = groove_centre_right,
                       material = medium_groove)
-        b2 = mp.Block(e1=mp.Vector3(cos(phi), sin(phi), 0),
-                      e2=mp.Vector3(cos(phi+pi/2), sin(phi+pi/2), 0),
-                      size=groove_size,
-                      center=groove_centre.rotate(mp.Z, phi+pi),
+        b2 = mp.Block(e1 = e1,
+                      e2 = e2,
+                      e3 = e3,
+                      size = groove_size,
+                      center = groove_centre_left,
                       material = medium_groove)
 
         device.append(b1)
@@ -733,7 +763,7 @@ def grating_veritices(period, start_radius1,
             vertices[1,0:half_res] = radius * np.sin(theta)
             vertices[0,half_res:res] = np.flip( (radius+period*FF) * np.cos(theta))
             vertices[1,half_res:res] = np.flip( (radius+period*FF) * np.sin(theta))
-            vertices[1,half_res] += .001   # this is necessary for solving a bug
+            vertices[1,half_res] -= .001   # this is necessary for solving a bug
                                            # see https://github.com/NanoComp/libctl/issues/61
             vert_list.append(vertices)
 
@@ -758,11 +788,18 @@ def create_openscad(sim, scale_factor=1):
         for obj in sim.geometry:
             if obj.__class__ == mp.Block:
                 cube = ops.Cube([obj.size.x*scale_factor,
-                                  obj.size.y*scale_factor,
-                                  obj.size.z*scale_factor], center = True)
-                tilt = np.arctan2(obj.e1.y, obj.e1.x)
+                                 obj.size.y*scale_factor,
+                                 obj.size.z*scale_factor], center = True)
+                tilt = np.arctan2(obj.e3.y, obj.e3.x)
+                print(obj.e1)
                 if tilt != 0:
                     cube = cube.rotate([0, 0, tilt/np.pi*180])
+                tilt = np.arctan2(obj.e1.z, obj.e1.x)
+                if tilt != 0:
+                    cube = cube.rotate([0, -tilt/np.pi*180, 0])
+                tilt = np.arctan2(obj.e1.z, obj.e1.y)
+                if tilt != 0:
+                    cube = cube.rotate([tilt/np.pi*180, 0, 0])
 
                 index = np.round(np.sqrt(obj.material.epsilon_diag.x),2)
                 if index == 2.53:
