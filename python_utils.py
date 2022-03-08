@@ -80,9 +80,9 @@ def plot_data_section(data, x=None, y=None, z=None):
     plt.show()
 
 def plot_image(x, y, image,  n_grid = 11, **kwargs):
-    fig, ax = plt.subplots(1,1)
+    # fig, ax = plt.subplots(1,1)
 
-    plt.imshow(np.transpose(image), origin='lower', **kwargs)
+    image = plt.imshow(np.transpose(image), origin='lower', **kwargs)
 
     x_label_list = np.round(np.linspace(x.min(), x.max(), n_grid), 2)
     y_label_list = np.round(np.linspace(y.min(), y.max(), n_grid), 2)
@@ -93,4 +93,4 @@ def plot_image(x, y, image,  n_grid = 11, **kwargs):
     plt.xticks(x_positions, x_label_list)
     plt.yticks(y_positions, y_label_list)
 
-    return fig
+    return image.get_figure()
