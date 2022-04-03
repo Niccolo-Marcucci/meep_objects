@@ -248,9 +248,11 @@ def dielectric_multilayer(design_file, substrate_thickness, x_width,
     N = np.size(data['idx_layers'])
     idx_layers = data['idx_layers'].reshape(N)
     d_layers   = data['d_layers'].reshape(N)
-
+    # print(used_layer_info)
+    # print(d_layers)
     d_layers[ used_layer_info['used_layer'] ] = used_layer_info['thickness']*1e-6
     idx_layers[ used_layer_info['used_layer'] ] = used_layer_info['refractive index']
+    used_layer = used_layer_info['used_layer']
 
     if unit == 'nm' :
         d_layers *= 1e9
@@ -262,21 +264,14 @@ def dielectric_multilayer(design_file, substrate_thickness, x_width,
     d_layers[ 0] = substrate_thickness
     d_layers[-1] = 0
 
-    if buried:
-        z_shift = d_layers[-2]/2 + d_layers[-3]
-    else:
-        z_shift = d_layers[-2]/2
-
-        # d_layers[-2] = 0
-
     multilayer = []
 
     for i, d in enumerate(d_layers) :
         if d == 0 :
             continue
 
-        z = -d_layers[-2]/2 - my_sum(d_layers,i+1,-2) - d/2 + z_shift
-
+        z = np.sum( d_layers[:i] ) + d/2 - np.sum(d_layers[:used_layer]) - d_layers[used_layer]/2
+        z = np.round(z, 4)
         if not (i == N-2 and exclude_last_layer) :
             if axis == mp.Z :
                 size = [x_width, y_width, d]
@@ -515,6 +510,59 @@ def metasurface_radial_grating(medium_groove=mp.Medium(epsilon=2),
 
                     metasurface[-1].name  = f'Scatter_{n}_{k}'
                     metasurface[-1].group = 'Metasurface'
+
+    return metasurface
+
+def linear_pol_splitting_grating(  medium_groove=mp.Medium(epsilon=2),
+                                metasurface_period=0.4, scatter_length = 0.4,
+                                scatter_width=0.1, scatter_tilt=pi/3,
+                                scatter_shape = '',
+                                N_periods_x=9, N_periods_y=1,
+                                thickness=1, center=mp.Vector3(0, 0, 0)):
+    """
+    Circular polarization sensitive grating. Similar tu the metasurface-like
+    grating, but with specific purpose.
+    """
+    sc_width = scatter_width
+    sc_length = scatter_length
+
+    # following lists are for v-shaped scatters
+    rel_width = sc_width / sc_length
+    scatter_vertices_x = [0, .5, .5-rel_width/0.866, 0, -.5+rel_width*0.866, -.5]
+    scatter_vertices_y = [-.5, .5, .5, -.5+rel_width/0.5, .5, .5]
+    scatter_vertices = np.array([scatter_vertices_x, scatter_vertices_y]).transpose()
+
+    metasurface = []
+
+    if N_periods_x != 0:
+        for n in range(N_periods_x):
+            for k in range(N_periods_y):
+                tilt = n * scatter_tilt + pi/2
+
+                if scatter_shape == 'V' or scatter_shape == 'v' :
+                    tilt = tilt - pi
+                    vertices = [mp.Vector3(v[0],v[1],0).rotate(mp.Z,tilt)*sc_length for v in scatter_vertices]
+                    centroid =  sum(vertices, mp.Vector3(0)) * (1.0 / len(vertices))
+
+                    scatter =  mp.Prism(vertices = vertices,
+                                        height = thickness,
+                                        center=mp.Vector3(n * metasurface_period - (N_periods_x-1)/2,
+                                                          k * metasurface_period - (N_periods_y-1)/2,
+                                                          0) + center + centroid,
+                                        axis = mp.Vector3(z=1),
+                                        material = medium_groove)
+                else:
+                    scatter = mp.Block(e1=mp.Vector3(cos(tilt), sin(tilt), 0),
+                                       e2=mp.Vector3(cos(tilt+pi/2), sin(tilt+pi/2), 0),
+                                       size=mp.Vector3(sc_length, sc_width, thickness),
+                                       center=mp.Vector3( (n - (N_periods_x-1)/2) * metasurface_period,
+                                                          (k - (N_periods_y-1)/2) * metasurface_period,
+                                                         0) + center,
+                                       material=medium_groove)
+
+                metasurface.append(scatter)
+                metasurface[-1].name  = f'Scatter_{n}_{k}'
+                metasurface[-1].group = 'Metasurface'
 
     return metasurface
 
@@ -785,21 +833,22 @@ def create_openscad(sim, scale_factor=1):
             print("written")
             file.write(f"//Simulation {scad_name}\n")
 
+        full_scad = None
         for obj in sim.geometry:
             if obj.__class__ == mp.Block:
                 cube = ops.Cube([obj.size.x*scale_factor,
                                  obj.size.y*scale_factor,
                                  obj.size.z*scale_factor], center = True)
-                tilt = np.arctan2(obj.e3.y, obj.e3.x)
+                tiltz = np.arctan2(obj.e1.y, obj.e1.x)
                 print(obj.e1)
-                if tilt != 0:
-                    cube = cube.rotate([0, 0, tilt/np.pi*180])
-                tilt = np.arctan2(obj.e1.z, obj.e1.x)
-                if tilt != 0:
-                    cube = cube.rotate([0, -tilt/np.pi*180, 0])
-                tilt = np.arctan2(obj.e1.z, obj.e1.y)
-                if tilt != 0:
-                    cube = cube.rotate([tilt/np.pi*180, 0, 0])
+                if tiltz != 0:
+                    cube = cube.rotate([0, 0, tiltz/np.pi*180])
+                # tiltx = np.arctan2(obj.e1.z, obj.e1.x)
+                # if tiltx != 0:
+                #     cube = cube.rotate([0, -tiltx/np.pi*180, 0])
+                # tilty = np.arctan2(obj.e1.z, obj.e1.y)
+                # if tilty != 0:
+                #     cube = cube.rotate([tilty/np.pi*180, 0, 0])
 
                 index = np.round(np.sqrt(obj.material.epsilon_diag.x),2)
                 if index == 2.53:
@@ -813,7 +862,7 @@ def create_openscad(sim, scale_factor=1):
                 elif index == 2.08:
                     color = [0, 1, 1]
                 else:
-                    color = [1, 0, 0]
+                    color = [1, 0, 1]
                 cube = cube.color(color)
 
                 scad = cube
@@ -831,7 +880,15 @@ def create_openscad(sim, scale_factor=1):
             scad = scad.translate([obj.center.x*scale_factor,
                                    obj.center.y*scale_factor,
                                    obj.center.z*scale_factor])
-            scad.write(scad_name, mode='a')
+
+
+            if full_scad == None:
+                full_scad = scad
+            else:
+                full_scad.append(scad)
+
+        full_scad.write(scad_name)#, mode='a')
+
 
         # sim_domain = ops.Cube([(sim.cell_size.x - sim.PML_width) * scale_factor,
         #                         (sim.cell_size.y - sim.PML_width) * scale_factor,
