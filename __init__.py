@@ -29,7 +29,7 @@ from matplotlib import pyplot as plt, cm, colors, widgets
 
 from meep_objects.python_utils import *
 
-def anysotropic_material (n, anisotropy1, anisotropy2=0, rot_angle_3=0,
+def anisotropic_material (index, anisotropy1, anisotropy2=0, rot_angle_3=0,
                           rot_angle_1=0, rot_angle_2=0 ):
     """
     Creates and anysotropyc material with two extraordinary axis and one
@@ -39,7 +39,7 @@ def anysotropic_material (n, anisotropy1, anisotropy2=0, rot_angle_3=0,
 
     Parameters
     ----------
-    n : Real Positive
+    index : Real Positive
         Base refractive index.
     anisotropy1 : Real Positive
         Relative variation of the refractive index along the first axis with
@@ -59,7 +59,7 @@ def anysotropic_material (n, anisotropy1, anisotropy2=0, rot_angle_3=0,
         DESCRIPTION.
 
     """
-    eps = n**2
+    eps = index**2
 
     eps_e1 = eps*(1+anisotropy1/100)
     eps_e2 = eps*(1+anisotropy2/100)
@@ -811,8 +811,8 @@ def grating_veritices(period, start_radius1,
             vertices[1,0:half_res] = radius * np.sin(theta)
             vertices[0,half_res:res] = np.flip( (radius+period*FF) * np.cos(theta))
             vertices[1,half_res:res] = np.flip( (radius+period*FF) * np.sin(theta))
-            vertices[1,half_res] -= .001   # this is necessary for solving a bug
-                                           # see https://github.com/NanoComp/libctl/issues/61
+            vertices[1,half_res] -= .001    # this is necessary for solving a bug
+                                            # see https://github.com/NanoComp/libctl/issues/61
             vert_list.append(vertices)
 
     return vert_list
@@ -830,17 +830,17 @@ def create_openscad(sim, scale_factor=1):
             scad_name = "meep_sim.scad"
 
         with open(scad_name,"w") as file:
-            print("written")
             file.write(f"//Simulation {scad_name}\n")
 
-        full_scad = None
+        full_scad = ops.Union()
         for obj in sim.geometry:
+            centroid = mp.Vector3()
             if obj.__class__ == mp.Block:
                 cube = ops.Cube([obj.size.x*scale_factor,
                                  obj.size.y*scale_factor,
                                  obj.size.z*scale_factor], center = True)
                 tiltz = np.arctan2(obj.e1.y, obj.e1.x)
-                print(obj.e1)
+                # print(obj.e1)
                 if tiltz != 0:
                     cube = cube.rotate([0, 0, tiltz/np.pi*180])
                 # tiltx = np.arctan2(obj.e1.z, obj.e1.x)
@@ -852,17 +852,18 @@ def create_openscad(sim, scale_factor=1):
 
                 index = np.round(np.sqrt(obj.material.epsilon_diag.x),2)
                 if index == 2.53:
-                    color = [0, 0, 1]
+                    color = [1, 0, 0]
                 elif index == 1.65:
                     color = [0, 1, 0]
                 elif index == 1.46:
-                    color = [1, 0, 0]
+                    color = [0, .6, .6]
                 elif index == 1.48:
                     color = [1, 1, 0]
                 elif index == 2.08:
-                    color = [0, 1, 1]
+                    color = [.5, 0, 0]
+                    continue
                 else:
-                    color = [1, 0, 1]
+                    color = [0, .3, .33]
                 cube = cube.color(color)
 
                 scad = cube
@@ -874,11 +875,17 @@ def create_openscad(sim, scale_factor=1):
                 scad = cyl
 
             elif obj.__class__ == mp.Prism:
-                print("to be defined")
-                #prism = ops.Polyhedron(points)
+                vertices = [ [v.x*scale_factor, v.y*scale_factor ] for v in obj.vertices ]
+                vertices[int(len(vertices)/2)][1] += .001 # undo bug correction in function "grating_veritices"
+                centroid =  sum(obj.vertices, mp.Vector3(0)) * (scale_factor / len(vertices))
+                base = ops.Polygon(vertices)
+                scad = ops.Linear_Extrude(
+                    height = obj.height*scale_factor,
+                    center = True)
+                scad.append(base)
 
-            scad = scad.translate([obj.center.x*scale_factor,
-                                   obj.center.y*scale_factor,
+            scad = scad.translate([obj.center.x*scale_factor - centroid.x,
+                                   obj.center.y*scale_factor - centroid.y,
                                    obj.center.z*scale_factor])
 
 
@@ -888,6 +895,7 @@ def create_openscad(sim, scale_factor=1):
                 full_scad.append(scad)
 
         full_scad.write(scad_name)#, mode='a')
+        print("Openscad created")
 
 
         # sim_domain = ops.Cube([(sim.cell_size.x - sim.PML_width) * scale_factor,
