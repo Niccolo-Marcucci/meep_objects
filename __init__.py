@@ -59,6 +59,10 @@ def anisotropic_material (index, anisotropy1, anisotropy2=0, rot_angle_3=0,
         DESCRIPTION.
 
     """
+
+    if anisotropy1 == 0 and anisotropy2 == 0:
+        return mp.Medium(index=index)
+
     eps = index**2
 
     eps_e1 = eps*(1+anisotropy1/100)
