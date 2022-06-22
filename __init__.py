@@ -29,6 +29,30 @@ from matplotlib import pyplot as plt, cm, colors, widgets
 
 from meep_objects.python_utils import *
 
+def Medium(epsilon=1, index=1, **kwargs):
+    if np.size(epsilon) == 1 and np.size(index) == 1 :
+        if epsilon == index**2:
+            if epsilon == 1 :
+                return mp.Medium(**kwargs)
+            else:
+                return mp.Medium(epsilon=epsilon,**kwargs)
+        else:
+            return mp.Medium(index=index,**kwargs)
+    else:
+        epsilon = index if np.size(index) > np.size(epsilon) else epsilon
+        popt = epsilon
+        N = int(len(popt)/3)
+        eps_inf = popt[-1]
+        E_susceptibilities = []
+        for n in range(N):
+            mymaterial_freq =  popt[3*n+0]
+            mymaterial_gamma = popt[3*n+1]
+            mymaterial_sigma = popt[3*n+2]
+            E_susceptibilities.append(mp.LorentzianSusceptibility(frequency=mymaterial_freq,
+                                                                      gamma=mymaterial_gamma,
+                                                                      sigma=mymaterial_sigma))
+        return mp.Medium(epsilon=eps_inf, E_susceptibilities=E_susceptibilities, **kwargs)
+
 def anisotropic_material (index, anisotropy1, anisotropy2=0, rot_angle_3=0,
                           rot_angle_1=0, rot_angle_2=0 ):
     """
@@ -61,7 +85,7 @@ def anisotropic_material (index, anisotropy1, anisotropy2=0, rot_angle_3=0,
     """
 
     if anisotropy1 == 0 and anisotropy2 == 0:
-        return mp.Medium(index=index)
+        return Medium(index=index)
 
     eps = index**2
 
@@ -90,10 +114,10 @@ def anisotropic_material (index, anisotropy1, anisotropy2=0, rot_angle_3=0,
     eps_matrix = np.matmul(np.matmul(rot_matrix,eps_matrix),
                            np.linalg.inv(rot_matrix))
 
-    return mp.Medium(epsilon_diag = np.diag(eps_matrix),
-                     epsilon_offdiag = np.array([eps_matrix[0,1],
-                                                 eps_matrix[0,2],
-                                                 eps_matrix[1,2]]))
+    return Medium(epsilon_diag = np.diag(eps_matrix),
+                  epsilon_offdiag = np.array([eps_matrix[0,1],
+                                              eps_matrix[0,2],
+                                              eps_matrix[1,2]]))
 
 def circular_DBR_cavity (medium_back=mp.Medium(epsilon=1),
                          medium_groove=mp.Medium(epsilon=2),
