@@ -21,6 +21,8 @@
 import numpy as np
 import math
 from math import pi, cos, sin, tan, atan, atan2, sqrt, exp
+from scipy import signal, io, interpolate as itp, optimize as opt
+from tqdm import tqdm
 
 def prepare_multilayer(d,n):
     """
@@ -33,31 +35,33 @@ def prepare_multilayer(d,n):
     """
 
     N_l = np.size(d)
-    d_start = d[1]
+    d_start = d[0]
     d_end = d[-1]
-    d[1] = 0
+    d[0] = 0
     d[-1] = 0
 
     # remove dummy layers at beginning/end, and set remaining first and
     # last layer with zero thickness
-    i = 2
-    while n[i] == n[1] or (d[i] == 0 or d[i] == 0.):# exit when encounter
+    i = 1
+    while n[i] == n[0] or float(d[i]) == 0.:         # exit when encounter
         d[i] = 0                                    # the first layer with
-        i = -1                                      # n~=n(1) that has
+        i += 1                                      # n~=n[1] that has
                                                     # thickness
-    while (n[i]==n[-1]) or (d[i]==0):
+
+    i = -2
+    while np.real(n[i]) == np.real(n[-1]) or float(d[i]) == 0.:
         d[i] = 0
-        i = i-1
+        i -= 1
 
     d_new = []
     n_new = []
-    for i,l in enumerate(d):
-        if l != 0 and l != 0.:
+    for i, l in enumerate(d):
+        if float(l) != 0. or i == 0 or i == N_l-1:
             d_new.append(l)
             n_new.append(n[i])
 
-    n = n_new
-    d = d_new
+    n = np.array(n_new)
+    d = np.array(d_new)
 
     return d, n, d_start, d_end
 
@@ -181,3 +185,41 @@ def reflectivity (wavelengths, thetas, d,n,pol) : # [R,r,t,Tr] =
         t = t[0]
 
     return R, r, t , T
+
+def extract_bsw_dispersion(lambda_v, last_layer_info, design_file , pol, n_eff_range=(1, 1.15, 1000)):
+    def lorenzian(x, p0, p1, p2):
+        return p0 / ((x - p1)**2 + p2)
+
+    data = io.loadmat(design_file)
+
+    data["d_layers"][-2] = last_layer_info[0]
+    data["idx_layers"][-2] = last_layer_info[1] + 1j*1e-4
+
+    d, n, _, _ = prepare_multilayer(data["d_layers"], data["idx_layers"])
+
+    n_eff_v = np.linspace(*n_eff_range)
+    theta_v = np.real(np.arcsin(n_eff_v / n[0])) / pi*180 + 0.001
+
+    n_eff_real = np.ones(len(lambda_v))
+    n_eff_imag = np.zeros(len(lambda_v))
+
+    for i, wavelength in tqdm(enumerate(lambda_v)):
+        R, _, _, _ = reflectivity(wavelength, theta_v, d, n, pol)
+        profile = 1 - R
+        ix = np.argmax(profile)
+        n_eff_real[i] = n_eff_v[ix]
+        # try :
+        #     popt, pcov = opt.curve_fit(lorenzian, n_eff_v, profile, p0=(profile.max()*0.01, n_eff_v[ix] , .001),
+        #                                                             bounds = ([0,                      n_eff_v[ix]-0.01,   0 ],
+        #                                                                       [profile.max()*0.01*1.1, n_eff_v[ix]+0.01, 0.01]))
+        # except RuntimeError:
+        #     print(f"didn't find opt param for wavelength {wavelength*1e9:.1f}")
+        # else:
+        #     n_eff_real[i] = popt[1]
+        #     # n_eff_imag[i] = 3*sqrt(popt[2])
+
+        #     import matplotlib.pyplot as plt
+        #     plt.figure()
+        #     plt.plot(n_eff_v, profile, n_eff_v, lorenzian(n_eff_v, *popt))
+
+    return n_eff_real, n_eff_imag
