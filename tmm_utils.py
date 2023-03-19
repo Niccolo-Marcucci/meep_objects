@@ -104,14 +104,14 @@ def reflectivity (wavelengths, thetas, d,n,pol) : # [R,r,t,Tr] =
 
     for i in range( N_w ):
         for j in range( N_t):
-            Lambda = wavelengths[i]
+            lambda_ = wavelengths[i]
 
             theta_in = thetas[j] / 180*pi
 
-            K = 2*pi/Lambda
+            K = 2*pi/lambda_
 
-            # if np.size(theta_in) > 1 or np.size(Lambda) > 1:
-            #      raise ValueError("Lambda or theta should be scalar")
+            # if np.size(theta_in) > 1 or np.size(lambda_) > 1:
+            #      raise ValueError("lambda_ or theta should be scalar")
 
             # transverse wavevector.
             beta = n[0]*sin(theta_in)
@@ -223,3 +223,174 @@ def extract_bsw_dispersion(lambda_v, last_layer_info, design_file , pol, n_eff_r
         #     plt.plot(n_eff_v, profile, n_eff_v, lorenzian(n_eff_v, *popt))
 
     return n_eff_real, n_eff_imag
+
+def field_distribution(lambda_, theta, d, n, pol, res=50):
+    '''
+    % Computes the field distribution inside a dielectric multilayer stack.
+    %
+    % - The output P is the normalized power density: |Hx|^2/|H0|^2 for
+    %   p-polarization and |Ex|^2 for s-polarization
+    % - The resolution parameter (in input) can be neglected
+    % - The function can be used also to extract only nz. in this case use
+    %   in the form:
+    %   field_distribution(lambda_,theta,d,n,'',res)
+    '''
+
+    d, n, dsub, dair = prepare_multilayer(d,n);  # check fun description
+
+    # determining an optimal resolution, 50 points on shortest wavelegth
+    step = lambda_/max(np.real(n))/res
+    sz = round(sum(d)/step)          # size of z vector
+    z  = np.linspace(0, sum(d), sz)
+    nz = np.ones(sz, dtype=complex)
+    step = z[1] - z[0]
+
+    # create nz vector: if a point is located exactly at an interface, it
+    # will be cosidered to belong to the layer on the right hand side of
+    # the interface
+    j = 0
+    zv = np.cumsum(d)
+    za = zv[j]
+    zb = zv[j+1]
+    for i in range(1, sz):
+        if abs(z[i] - zb) <= step/2:
+            j = j+1
+            z[i] = zb
+            za = zv[j]
+            zb = zv[j+1]
+            nz[i] = n[j+1]
+        elif (z[i] > za) and (z[i] < zb):
+            nz[i] = n[j+1]
+
+    # enforce first and last
+    nz[0] = n[0]
+    nz[-1] = n[-1]
+
+    # substrate
+    z_sub = np.arange(-dsub, 0, step)
+    sz_sub = z_sub.size
+    nz_sub = n[0] * np.ones(sz_sub, dtype=complex)
+
+    # external medium
+    z_air = np.arange(step, dair + step, step)
+    sz_air = z_air.size
+    nz_air = n[-1]*np.ones(sz_air, dtype=complex)
+
+    z  = np.concatenate((z_sub,   z, z_air+z[-1]))
+    nz = np.concatenate((nz_sub, nz, nz_air))
+
+
+    # TMM applied from left to right, where
+    #   Eout = T * Ein
+    #   i.e. field on te right of the interface is equal to matrix T times
+    #   field on the left (assuming input field comes from the left)
+    # Check the appendix for more info.
+
+    # first of all extract the reflected field at the first interface
+    _, r, _, _ = reflectivity(lambda_, theta, d, n, pol)
+
+    # determine wave direction in each layer
+    K=2*pi/lambda_
+    theta = theta/180*pi
+    beta = n[0]*sin(theta)
+    costheta = np.sqrt(n**2 - beta**2) / n
+    # costheta(real(costheta) < 1e-15) = -costheta(real(costheta) < 1e-15)
+
+    # and now propagate the fields
+    E = np.zeros((2,sz), dtype=complex)
+    E_air = np.zeros((2,sz_air), dtype=complex)
+    E_sub = np.zeros((2,sz_sub), dtype=complex)
+
+    j = 0
+    zv = np.cumsum(d)
+    za = zv[j]
+    zb = zv[j+1]
+
+    E[:,0] = [1, r]
+    # if abs(np.imag(costheta)) > 1e-15:
+    #     E[:,0] = [0, r]
+
+    Mt = Tij(n[0], n[1], beta, pol)
+    for i in range(1,sz):
+        kz = K*n[j+1]*costheta[j+1]
+        Pt = np.array([[exp(+1j*kz*(z[i]-za)), 0],
+                       [0 , exp(-1j*kz*(z[i]-za)) ]], dtype=complex)
+        if z[i] == zb:
+            j=j+1
+            T = Tij(n[j], n[j+1], beta, pol)
+            Mt = np.matmul(T, np.matmul(Pt,Mt))
+            za = zv[j]
+            zb = zv[j+1]
+            E[:,i]  = np.matmul(Mt, np.array([1,r], dtype=complex))
+        else:
+            E[:,i]  = np.matmul(Pt,np.matmul(Mt, np.array([1,r], dtype=complex)))
+
+    E_air[0,:] = E[0,-1]*np.exp(+1j*K*nz[-1]* costheta[-1]*z_air)
+    E_sub[0,:] = E[0,0] *np.exp(+1j*K*nz[0] * costheta[0]*z_sub)
+    E_sub[1,:] = E[1,0] *np.exp(-1j*K*nz[0] * costheta[0]*z_sub)
+    E = np.concatenate((E_sub, E, E_air), axis=1)
+
+    # apply Maxwell equations in order to extract H and E
+    costheta_z = np.sqrt(nz**2 - beta**2) / nz
+    field = {}
+    if pol == 'p':
+        # In order to determine Ey and Ez it is necessary to take into
+        # account the conventions of signs with which the Fresnel
+        # coefficient have been analytically derived.
+        # Check the appendix for more info.
+        sintheta_z = beta/nz
+
+        field["Ery"] = E[0,:]*costheta_z
+        field["Ely"] = E[1,:]*costheta_z
+        field["Erz"] =-E[0,:]*sintheta_z
+        field["Elz"] = E[1,:]*sintheta_z
+        field["Ey"]  = field["Ery"]  + field["Ely"]
+        field["Ez"]  = field["Erz"]  + field["Elz"]
+
+        field["Hrx"] = beta*field["Erz"]  - nz*costheta_z*field["Ery"]
+        field["Hlx"] =-beta*field["Elz"]  - nz*costheta_z*field["Ely"]
+        field["Hx"]  = field["Hrx"]  + field["Hlx"]
+
+        P = abs(field["Hx"] )**2 #/(abs(field["Hrx"][z_sub.size+1])**2)
+    else:
+        # With s-polarisation the sign convention is much easier. We
+        # simply apply the third Maxwell equation
+        # Check the appendix for more info.
+
+        field["Erx"] = E[0,:]
+        field["Elx"] = E[1,:]
+        field["Ex"]  = field["Erx"] + field["Elx"]
+
+        field["Hry"] =  nz * costheta_z * field["Erx"]
+        field["Hly"] = -nz * costheta_z * field["Elx"]
+        field["Hrz"] = -beta*field["Erx"]
+        field["Hlz"] = -beta*field["Elx"]
+
+        field["Hy"]  = field["Hry"]  + field["Hly"]
+        field["Hz"]  = field["Hrz"]  + field["Hlz"]
+
+        P = abs(field["Ex"])**2
+
+    return z, nz, P, field
+
+
+def Tij(n_i, n_j, beta, pol):
+# % TMM where E_out = T * E_in
+# % r = -T21/T22, t = T11 + T12*r
+    costheta_i = sqrt(n_i**2 - beta**2) / n_i
+    costheta_j = sqrt(n_j**2 - beta**2) / n_j
+    # Fresnel coefficients
+    if pol == 's' :
+        rij = (n_i*costheta_i - n_j*costheta_j) / (n_i*costheta_i + n_j*costheta_j)
+        rji = -rij
+        tji =  rji + 1
+    elif pol == 'p' :
+        rij = (n_j*costheta_i - n_i*costheta_j) / (n_j*costheta_i + n_i*costheta_j)
+        rji = -rij
+        tji = (rji + 1) * n_j/n_i
+    else:
+       raise ValueError("Invalid Polarization. Valid options are 's' or 'p'")
+
+    T = 1/tji * np.array([[ 1 , rji ],
+                          [rji,  1  ]], dtype=complex)
+    return T
