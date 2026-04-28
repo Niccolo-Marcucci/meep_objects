@@ -122,7 +122,7 @@ def anisotropic_material (index, anisotropy1, anisotropy2=0, rot_angle_3=0,
 def circular_DBR_cavity (medium_back=mp.Medium(epsilon=1),
                          medium_groove=mp.Medium(epsilon=2),
                          D=0.4, DBR_period=0.2, FF=0.5, N_rings=10,
-                         thickness = 0, orientation = mp.Vector3(0,0,1)):
+                         thickness = 0, orientation = mp.Vector3(0,0,1), spacer_type = "empty"):
     """
     Circular DBR cavity created as a sequence of concentric cylinders
 
@@ -147,6 +147,8 @@ def circular_DBR_cavity (medium_back=mp.Medium(epsilon=1),
         Returns a list of (meep) geometric objects.
 
     """
+    if spacer_type == "filled":
+        D -= 2*FF*DBR_period
     device = []
     rings = []
     for i in range(1,N_rings+1):
@@ -154,12 +156,13 @@ def circular_DBR_cavity (medium_back=mp.Medium(epsilon=1),
                          height = thickness,
                          axis = orientation,
                          material = medium_groove)
-        c2 = mp.Cylinder(radius = D/2+(N_rings-i)*DBR_period,
-                         height = thickness,
-                         axis = orientation,
-                         material = medium_back)
         rings.append(c1)
-        rings.append(c2)
+        if not (i == N_rings and spacer_type == "filled"):
+            c2 = mp.Cylinder(radius = D/2+(N_rings-i)*DBR_period,
+                            height = thickness,
+                            axis = orientation,
+                            material = medium_back)
+            rings.append(c2)
     device.extend(rings)
     return device
 
